@@ -68,10 +68,13 @@ class Conversation(TrackingModel):
         return f'{self.name}'
 
 
+
 class Message(TrackingModel):
     conversation = models.ForeignKey(Conversation,on_delete=models.CASCADE ,related_name='messages')
     sender = models.ForeignKey(User,on_delete=models.CASCADE , related_name='messages')
-    text  = models.CharField(max_length=3000, blank=True, null=True)
+    reciepient = models.ForeignKey(User,on_delete=models.CASCADE , related_name='recieved_messages',blank=True, null=True)
+    content = models.CharField(max_length=1000)
+    read = models.BooleanField(default=False)
 
 
     class Meta:
@@ -80,4 +83,4 @@ class Message(TrackingModel):
 
     def __str__(self):
         reciever = self.conversation.users.exclude(username=self.sender.username).first()
-        return f'{self.sender} -> {reciever} : {self.text}'
+        return f'{self.sender} -> {reciever} : {self.content} @ {self.created_at}'
