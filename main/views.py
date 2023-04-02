@@ -1,27 +1,26 @@
-from django.shortcuts import render
-
-from rest_framework.views import APIView
-from rest_framework.response import Response
 from rest_framework import status
-from rest_framework.decorators import permission_classes
-from rest_framework.permissions import IsAuthenticated
-
 from rest_framework.authtoken.models import Token
-
-from .models import Conversation ,User, Message
-from .serializers import ConservationSerializer,CreateUserSerializer,UserSerializer, MessageSerializer
-
 from rest_framework.authtoken.views import ObtainAuthToken
+from rest_framework.decorators import permission_classes
+from rest_framework.mixins import ListModelMixin
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.views import APIView
+from rest_framework.viewsets import GenericViewSet
+
+from .models import Conversation, User, Message
+from .pagination import MessagePagination
+from .serializers import ConservationSerializer, CreateUserSerializer, UserSerializer, MessageSerializer
 
 
 class CustomObtainAuthTokenView(ObtainAuthToken):
-    
+
     def post(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.validated_data["user"]
         token, created = Token.objects.get_or_create(user=user)
-        return Response({"token": token.key, "username": user.username})
+        return Response({"username": user.username, "token": token.key, })
 
 
 class UserView(APIView):
@@ -30,22 +29,21 @@ class UserView(APIView):
     """
 
     @permission_classes([IsAuthenticated, ])
-    def get(self, request, id=id, format=None):
-        user = User.objects.get(id=id)
+    def get(self, request, obj_id=id):
+        user = User.objects.get(id=obj_id)
         if not user:
-            return Response(serializer.errors, status=status.HTTP_404_NOT_FOUND)
+            return Response(status=status.HTTP_404_NOT_FOUND)
 
         serializer = UserSerializer(user)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
-
-    def post(self, request, format=None):
+    def post(self, request):
         serializer = CreateUserSerializer(data=request.data)
 
         if serializer.is_valid():
             account = serializer.save()
             token = Token.objects.get(user=account).key
-            response_data = {'acess_token': token }
+            response_data = {'access_token': token}
             response_data.update(serializer.data)
 
             return Response(response_data, status=status.HTTP_201_CREATED)
@@ -53,27 +51,47 @@ class UserView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-
 class ConversationView(APIView):
-    permission_classes = [IsAuthenticated,]
+    permission_classes = [IsAuthenticated, ]
 
     """
     get conversations
     """
-    def get(self, request, format=None):
-        conversation = Conversation.objects.filter(users__in=[request.user])
+
+    def get(self, request):
+        conversation = Conversation.objects.filter(users__in=[request.user]).order_by("-created_at")
         serializer = ConservationSerializer(conversation, many=True, context={'request': request})
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 class MessagesView(APIView):
-    permission_classes = [IsAuthenticated,]
+    permission_classes = [IsAuthenticated, ]
+    pagination_class = MessagePagination
 
     """
     get conversation messages
     """
-    def get(self, request, username, format=None):
+
+    def get(self, request, username):
         user2 = User.objects.get(username=username)
         conversation = Conversation.objects.get_or_create_personal_conversation(request.user, user2)
         serializer = MessageSerializer(conversation.messages, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class MessageViewSet(ListModelMixin, GenericViewSet):
+    permission_classes = [IsAuthenticated, ]
+    serializer_class = MessageSerializer
+    queryset = Message.objects.none()
+    pagination_class = MessagePagination
+
+    def get_queryset(self):
+        conversation_name = self.request.GET.get("conversation")
+        queryset = (
+            Message.objects.filter(
+                conversation__name__contains=self.request.user.username,
+            )
+            .filter(conversation__name=conversation_name)
+            .order_by("-created_at")
+        )
+        return queryset

@@ -43,44 +43,46 @@ class ConversationManager(models.Manager):
             conversation = self.create(type='personal', name=f'{first_user}__{second_user}')
             conversation.users.add(first_user)
             conversation.users.add(second_user)
-            return  conversation
-
+            return conversation
 
     def by_user(self, user):
         return self.get_queryset().filter(users_in=[user])
 
 
 class Conversation(TrackingModel):
-    CONVOS_TYPE = (
-        ('personal','Personal'),
-        ('group','Group')
+    CONVERSATION_TYPE = (
+        ('personal', 'Personal'),
+        ('group', 'Group')
     )
 
     name = models.CharField(max_length=20, null=True, blank=True)
-    type = models.CharField(max_length=15, choices=CONVOS_TYPE, default='group')
+    type = models.CharField(max_length=15, choices=CONVERSATION_TYPE, default='group')
     users = models.ManyToManyField(User)
 
     objects = ConversationManager()
 
     def __str__(self) -> str:
         if self.type == 'personal' and self.users.count() == 2:
-            return  f'{self.users.first()} and {self.users.last()}'
+            return f'{self.users.first()} and {self.users.last()}'
         return f'{self.name}'
 
+    def get_unread_messages_count(self, user):
+        return self.messages.filter(recipient=user, read=False).count()
 
 
 class Message(TrackingModel):
-    conversation = models.ForeignKey(Conversation,on_delete=models.CASCADE ,related_name='messages')
-    sender = models.ForeignKey(User,on_delete=models.CASCADE , related_name='messages')
-    reciepient = models.ForeignKey(User,on_delete=models.CASCADE , related_name='recieved_messages',blank=True, null=True)
+    conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE, related_name='messages')
+    sender = models.ForeignKey(User, on_delete=models.CASCADE, related_name='messages')
+    recipient = models.ForeignKey(User, on_delete=models.CASCADE, related_name='recieved_messages', blank=True,
+                                  null=True)
     content = models.CharField(max_length=1000)
+    state = models.CharField(max_length=10, default="sent")
     read = models.BooleanField(default=False)
-
 
     class Meta:
         ordering = ['created_at']
 
-
-    def __str__(self):
-        reciever = self.conversation.users.exclude(username=self.sender.username).first()
-        return f'{self.sender} -> {reciever} : {self.content} @ {self.created_at}'
+    def __str__(self) -> str:
+        if self.recipient:
+            return f'{self.sender} -> {self.recipient} : {self.content} @ {self.created_at}'
+        return f'{self.sender} : {self.content} @ {self.created_at}'

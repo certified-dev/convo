@@ -1,8 +1,6 @@
-import json
+from asgiref.sync import async_to_sync
+from channels.generic.websocket import JsonWebsocketConsumer
 
-from asgiref.sync import async_to_sync, sync_to_async
-from channels.db import database_sync_to_async
-from channels.generic.websocket import AsyncWebsocketConsumer, JsonWebsocketConsumer
 from .models import User, Conversation, Message
 from .serializers import MessageSerializer
 
@@ -10,6 +8,7 @@ from .serializers import MessageSerializer
 class NotificationConsumer(JsonWebsocketConsumer):
     def __init__(self, *args, **kwargs):
         super().__init__(args, kwargs)
+        self.notification_group_name = None
         self.user = None
 
     def connect(self):
@@ -25,11 +24,17 @@ class NotificationConsumer(JsonWebsocketConsumer):
             self.channel_name,
         )
 
-        unread_count = Message.objects.filter(to_user=self.user, read=False).count()
+        unread_count = Message.objects.filter(recipient=self.user, read=False).count()
+        conversations = Conversation.objects.filter(users__in=[self.user]).order_by("-created_at")
+        conversations_unread_counts = [
+            {"id": conversation.id, "count": conversation.get_unread_messages_count(self.user)}
+            for conversation in conversations
+        ]
         self.send_json(
             {
                 "type": "unread_count",
                 "unread_count": unread_count,
+                "conversations_unread_counts": conversations_unread_counts
             }
         )
 
@@ -40,9 +45,11 @@ class NotificationConsumer(JsonWebsocketConsumer):
         )
         return super().disconnect(code)
 
-    def new_message_notification(self, event):
+    def unread_count(self, event):
         self.send_json(event)
 
+    def new_message_notification(self, event):
+        self.send_json(event)
 
 
 class PersonalChatConsumer(JsonWebsocketConsumer):
@@ -50,10 +57,11 @@ class PersonalChatConsumer(JsonWebsocketConsumer):
     def __init__(self, *args, **kwargs):
         super().__init__(args, kwargs)
         self.room_name = None
+        self.conversation = None
         self.conversation_name = None
+        self.user_conversations = None
         self.user = None
         self.user2 = None
-
 
     def connect(self):
         self.user = self.scope['user']
@@ -66,6 +74,7 @@ class PersonalChatConsumer(JsonWebsocketConsumer):
 
         self.conversation = Conversation.objects.get_or_create_personal_conversation(self.user, self.user2)
         self.conversation_name = self.conversation.name
+        self.user_conversations = Conversation.objects.filter(users__in=[self.user]).order_by("-created_at")
         async_to_sync(self.channel_layer.group_add)(
             self.conversation_name,
             self.channel_name
@@ -76,7 +85,7 @@ class PersonalChatConsumer(JsonWebsocketConsumer):
             "message": "Hey there! You've successfully connected!",
         })
 
-        messages = self.conversation.messages.all().order_by("-created_at")[0:50]
+        messages = self.conversation.messages.all().order_by("-created_at")[:50]
         message_count = self.conversation.messages.all().count()
         self.send_json({
             "type": "last_50_messages",
@@ -87,7 +96,7 @@ class PersonalChatConsumer(JsonWebsocketConsumer):
     def disconnect(self, close_code):
         return super().disconnect(close_code)
 
-    def receive_json(self, content,  **kwargs):
+    def receive_json(self, content, **kwargs):
         message_type = content['type']
         if message_type == "chat_message":
             message = self.store_message(content['message'])
@@ -96,7 +105,9 @@ class PersonalChatConsumer(JsonWebsocketConsumer):
                 self.conversation_name,
                 {
                     'type': 'chat_message',
-                    'message': MessageSerializer(message).data
+                    'message': MessageSerializer(message).data,
+                    'conversation_id': self.conversation.id
+
                 })
 
             notification_group_name = self.user2.username + "__notifications"
@@ -105,7 +116,8 @@ class PersonalChatConsumer(JsonWebsocketConsumer):
                 {
                     "type": "new_message_notification",
                     "name": self.user.username,
-                    "message": MessageSerializer(message).data,
+                    # "message": MessageSerializer(message).data
+                    "id": self.conversation.id
                 },
             )
 
@@ -120,16 +132,37 @@ class PersonalChatConsumer(JsonWebsocketConsumer):
             )
 
         if message_type == "read_messages":
-            messages_to_me = self.conversation.messages.filter(reciepient=self.user)
-            messages_to_me.update(read=True)
+            messages_to_me = self.conversation.messages.filter(recipient=self.user)
+            messages_to_me.update(read=True, state="seen")
 
             # Update the unread message count
-            unread_count = Message.objects.filter(reciepient=self.user, read=False).count()
+            unread_count = Message.objects.filter(recipient=self.user, read=False).count()
+            conversations_unread_counts = [
+                {"id": conversation.id, "count": conversation.get_unread_messages_count(self.user)}
+                for conversation in self.user_conversations
+            ]
             async_to_sync(self.channel_layer.group_send)(
                 self.user.username + "__notifications",
                 {
                     "type": "unread_count",
                     "unread_count": unread_count,
+                    "conversations_unread_counts": conversations_unread_counts
+
+                },
+            )
+            async_to_sync(self.channel_layer.group_send)(
+                self.conversation_name,
+                {
+                    'type': 'seen_message',
+                    'user': self.user.username
+                })
+
+        if message_type == "message_received":
+            async_to_sync(self.channel_layer.group_send)(
+                self.conversation_name,
+                {
+                    "type": "received_message_ack",
+                    "user": self.user.username
                 },
             )
 
@@ -141,64 +174,70 @@ class PersonalChatConsumer(JsonWebsocketConsumer):
     def chat_message(self, event):
         self.send_json(event)
 
+    def seen_message(self, event):
+        self.send_json(event)
+
     def typing(self, event):
+        self.send_json(event)
+
+    def unread_count(self, event):
         self.send_json(event)
 
     def store_message(self, message):
         message = Message.objects.create(
             conversation=self.conversation,
             sender=self.user,
-            reciepient=self.user2,
+            recipient=self.user2,
             content=message
         )
-
         return message
 
 
-class RoomChatConsumer(AsyncWebsocketConsumer):
-    async def connect(self):
-        self.room_name = self.scope['url_route']['kwargs']['room_name']
-        self.room_group_name = 'chat_%s' % self.room_name
-
-        # Join room group
-        await self.channel_layer.group_add(
-            self.room_group_name,
-            self.channel_name
-        )
-
-        await self.accept()
-        print('connected')
-
-    async def disconnect(self, close_code):
-        # Leave room group
-        await self.channel_layer.group_discard(
-            self.room_group_name,
-            self.channel_name
-        )
-        print('disconnected')
-
-    # Receive message from WebSocket
-    async def receive(self, text_data):
-        print('recieved message from %s' % json.loads(text_data)['posted_by'])
-        text_data_json = json.loads(text_data)
-        posted_by, message = text_data_json['posted_by'], text_data_json['message']
-
-        # Send message to room group
-        await self.channel_layer.group_send(
-            self.room_group_name,
-            {
-                'type': 'chat_message',
-                'posted_by': posted_by,
-                'message': message
-            })
-
-    # Receive message from room group
-    async def chat_message(self, event):
-        posted_by, message = event['posted_by'], event['message']
-
-        # Send message to WebSocket
-        await self.send(text_data=json.dumps({
-            'message': message,
-            'posted_by': posted_by
-        }))
-        print('msg sent to %s' % self.channel_name)
+class RoomChatConsumer(JsonWebsocketConsumer):
+    pass
+    # async def connect(self):
+    #     self.room_name = self.scope['url_route']['kwargs']['room_name']
+    #     self.room_group_name = 'chat_%s' % self.room_name
+    #
+    #     # Join room group
+    #     await self.channel_layer.group_add(
+    #         self.room_group_name,
+    #         self.channel_name
+    #     )
+    #
+    #     await self.accept()
+    #     print('connected')
+    #
+    # async def disconnect(self, close_code):
+    #     # Leave room group
+    #     await self.channel_layer.group_discard(
+    #         self.room_group_name,
+    #         self.channel_name
+    #     )
+    #     print('disconnected')
+    #
+    # # Receive message from WebSocket
+    # async def receive(self, text_data):
+    #     print('received message from %s' % json.loads(text_data)['posted_by'])
+    #     text_data_json = json.loads(text_data)
+    #     posted_by, message = text_data_json['posted_by'], text_data_json['message']
+    #
+    #     # Send message to room group
+    #     await self.channel_layer.group_send(
+    #         self.room_group_name,
+    #         {
+    #             'type': 'chat_message',
+    #             'posted_by': posted_by,
+    #             'message': message
+    #         })
+    #
+    # # Receive message from room group
+    # async def chat_message(self, event):
+    #     posted_by, message = event['posted_by'], event['message']
+    #
+    #     # Send message to WebSocket
+    #     await self.send(text_data=json.dumps({
+    #         'message': message,
+    #         'posted_by': posted_by
+    #     }))
+    #     print('msg sent to %s' % self.channel_name)
