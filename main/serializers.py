@@ -9,18 +9,16 @@ class CreateUserSerializer(serializers.ModelSerializer):
     last_name = serializers.CharField(max_length=30, write_only=True)
     email = serializers.EmailField(max_length=50, write_only=True)
     password = serializers.CharField(max_length=15, write_only=True)
-    display_photo = serializers.ImageField(write_only=True)
 
     class Meta:
         model = User
-        fields = ('first_name', 'last_name', 'username', 'email', 'password', 'display_photo')
+        fields = ('first_name', 'last_name', 'username', 'email', 'password')
 
     def create(self, validated_data):
         user = User(username=validated_data['username'],
                     email=validated_data['email'],
                     first_name=validated_data['first_name'],
-                    last_name=validated_data['last_name'],
-                    display_photo=validated_data['display_photo']
+                    last_name=validated_data['last_name']
                     )
 
         user.set_password(validated_data['password'])

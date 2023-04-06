@@ -43,6 +43,7 @@ class ConversationManager(models.Manager):
             conversation = self.create(type='personal', name=f'{first_user}__{second_user}')
             conversation.users.add(first_user)
             conversation.users.add(second_user)
+            conversation.name = f'{first_user}__{second_user}'
             return conversation
 
     def by_user(self, user):
@@ -55,9 +56,10 @@ class Conversation(TrackingModel):
         ('group', 'Group')
     )
 
-    name = models.CharField(max_length=20, null=True, blank=True)
+    name = models.CharField(max_length=40, null=True, blank=True)
     type = models.CharField(max_length=15, choices=CONVERSATION_TYPE, default='group')
     users = models.ManyToManyField(User)
+    online = models.ManyToManyField(User, related_name="online_users", blank=True)
 
     objects = ConversationManager()
 
@@ -73,7 +75,7 @@ class Conversation(TrackingModel):
 class Message(TrackingModel):
     conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE, related_name='messages')
     sender = models.ForeignKey(User, on_delete=models.CASCADE, related_name='messages')
-    recipient = models.ForeignKey(User, on_delete=models.CASCADE, related_name='recieved_messages', blank=True,
+    recipient = models.ForeignKey(User, on_delete=models.CASCADE, related_name='received_messages', blank=True,
                                   null=True)
     content = models.CharField(max_length=1000)
     state = models.CharField(max_length=10, default="sent")

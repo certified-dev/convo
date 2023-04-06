@@ -1,7 +1,7 @@
 from asgiref.sync import async_to_sync
 from channels.generic.websocket import JsonWebsocketConsumer
 
-from .models import User, Conversation, Message
+from .models import User, Conversation, Message, TrackingModel
 from .serializers import MessageSerializer
 
 
@@ -30,6 +30,14 @@ class NotificationConsumer(JsonWebsocketConsumer):
             {"id": conversation.id, "count": conversation.get_unread_messages_count(self.user)}
             for conversation in conversations
         ]
+        self.send_json(
+            {
+                "type": "unread_count",
+                "unread_count": unread_count,
+                "conversations_unread_counts": conversations_unread_counts
+            }
+        )
+
         self.send_json(
             {
                 "type": "unread_count",
@@ -75,10 +83,27 @@ class PersonalChatConsumer(JsonWebsocketConsumer):
         self.conversation = Conversation.objects.get_or_create_personal_conversation(self.user, self.user2)
         self.conversation_name = self.conversation.name
         self.user_conversations = Conversation.objects.filter(users__in=[self.user]).order_by("-created_at")
+
         async_to_sync(self.channel_layer.group_add)(
             self.conversation_name,
             self.channel_name
         )
+
+        self.send_json(
+            {
+                "type": "online_user_list",
+                "users": list(self.conversation.online.all().values_list('username', flat=True)),
+            }
+        )
+        async_to_sync(self.channel_layer.group_send)(
+            self.conversation_name,
+            {
+                "type": "user_join",
+                "user": self.user.username,
+            },
+        )
+
+        self.conversation.online.add(self.user)
 
         self.send_json({
             "type": "welcome_message",
@@ -94,6 +119,15 @@ class PersonalChatConsumer(JsonWebsocketConsumer):
         })
 
     def disconnect(self, close_code):
+        if self.user.is_authenticated:
+            async_to_sync(self.channel_layer.group_send)(
+                self.conversation_name,
+                {
+                    "type": "user_leave",
+                    "user": self.user.username,
+                },
+            )
+            self.conversation.online.remove(self.user)
         return super().disconnect(close_code)
 
     def receive_json(self, content, **kwargs):
@@ -116,7 +150,6 @@ class PersonalChatConsumer(JsonWebsocketConsumer):
                 {
                     "type": "new_message_notification",
                     "name": self.user.username,
-                    # "message": MessageSerializer(message).data
                     "id": self.conversation.id
                 },
             )
@@ -157,16 +190,13 @@ class PersonalChatConsumer(JsonWebsocketConsumer):
                     'user': self.user.username
                 })
 
-        if message_type == "message_received":
-            async_to_sync(self.channel_layer.group_send)(
-                self.conversation_name,
-                {
-                    "type": "received_message_ack",
-                    "user": self.user.username
-                },
-            )
-
         return super().receive_json(content, **kwargs)
+
+    def user_join(self, event):
+        self.send_json(event)
+
+    def user_leave(self, event):
+        self.send_json(event)
 
     def new_message_notification(self, event):
         self.send_json(event)

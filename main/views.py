@@ -43,12 +43,23 @@ class UserView(APIView):
         if serializer.is_valid():
             account = serializer.save()
             token = Token.objects.get(user=account).key
-            response_data = {'access_token': token}
+            response_data = {'token': token}
             response_data.update(serializer.data)
 
             return Response(response_data, status=status.HTTP_201_CREATED)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class UsersView(APIView):
+    """
+    create new user.
+    """
+
+    @permission_classes([IsAuthenticated, ])
+    def get(self, request):
+        serializer = UserSerializer(User.objects.exclude(username=request.user.username), many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 class ConversationView(APIView):
@@ -61,6 +72,12 @@ class ConversationView(APIView):
     def get(self, request):
         conversation = Conversation.objects.filter(users__in=[request.user]).order_by("-created_at")
         serializer = ConservationSerializer(conversation, many=True, context={'request': request})
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def post(self, request):
+        other_user = User.objects.get(username=request.data['username'])
+        conversation = Conversation.objects.get_or_create_personal_conversation(request.user, other_user)
+        serializer = ConservationSerializer(conversation, context={'request': request})
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 
