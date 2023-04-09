@@ -20,7 +20,13 @@ class CustomObtainAuthTokenView(ObtainAuthToken):
         serializer.is_valid(raise_exception=True)
         user = serializer.validated_data["user"]
         token, created = Token.objects.get_or_create(user=user)
-        return Response({"username": user.username, "token": token.key, })
+        last = Conversation.objects.filter(id=user.last_conversation)[0]
+        serializer = ConservationSerializer(last, context={'request': user})
+        return Response({
+            "username": user.username,
+            "token": token.key,
+            "last_conversation": serializer.data or None
+        })
 
 
 class UserView(APIView):
@@ -112,3 +118,12 @@ class MessageViewSet(ListModelMixin, GenericViewSet):
             .order_by("-created_at")
         )
         return queryset
+
+
+class UserLogoutView(APIView):
+    permission_classes = [IsAuthenticated, ]
+
+    def post(self, request):
+        request.user.last_conversation = request.data['id']
+        request.user.save()
+        return Response(status=status.HTTP_200_OK)

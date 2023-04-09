@@ -1,7 +1,7 @@
 from asgiref.sync import async_to_sync
 from channels.generic.websocket import JsonWebsocketConsumer
 
-from .models import User, Conversation, Message, TrackingModel
+from .models import User, Conversation, Message
 from .serializers import MessageSerializer
 
 

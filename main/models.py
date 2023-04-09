@@ -13,6 +13,8 @@ def user_directory_path(instance, filename):
 
 class User(AbstractUser):
     display_photo = models.ImageField(upload_to=user_directory_path, default='placeholder/image.jpeg')
+    last_conversation = models.CharField(max_length=4, blank=True, null=True)
+    # friends = models.ManyToManyField(settings.AUTH_USER_MODEL, blank=True)
 
     @receiver(post_save, sender=settings.AUTH_USER_MODEL)
     def create_auth_token(sender, instance=None, created=False, **kwargs):

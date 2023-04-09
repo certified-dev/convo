@@ -56,6 +56,11 @@ class ConservationSerializer(serializers.ModelSerializer):
         return MessageSerializer(message).data
 
     def get_other_user(self, conversation):
-        request = self.context['request']
-        other_user = conversation.users.exclude(username=request.user.username)
+        data = self.context['request']
+
+        if type(data) == type(User.objects.first()):
+            other_user = conversation.users.exclude(username=data.username)
+        else:
+            other_user = conversation.users.exclude(username=data.user.username)
+
         return UserSerializer(other_user.first()).data
