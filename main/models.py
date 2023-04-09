@@ -48,6 +48,17 @@ class ConversationManager(models.Manager):
             conversation.name = f'{first_user}__{second_user}'
             return conversation
 
+    def get_or_create_group_conversation(self, user, name):
+        conversations = self.get_queryset().filter(type='group')
+        conversations = conversations.filter(users__in=[user])
+
+        if conversations.exists():
+            return conversations.first()
+        else:
+            conversation = self.create(type='group', name=name)
+            conversation.users.add(user)
+            return conversation
+
     def by_user(self, user):
         return self.get_queryset().filter(users_in=[user])
 

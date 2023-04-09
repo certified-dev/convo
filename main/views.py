@@ -20,7 +20,7 @@ class CustomObtainAuthTokenView(ObtainAuthToken):
         serializer.is_valid(raise_exception=True)
         user = serializer.validated_data["user"]
         token, created = Token.objects.get_or_create(user=user)
-        last = Conversation.objects.filter(id=user.last_conversation)[0]
+        last = Conversation.objects.filter(id=user.last_conversation).first()
         serializer = ConservationSerializer(last, context={'request': user})
         return Response({
             "username": user.username,
