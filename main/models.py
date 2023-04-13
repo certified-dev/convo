@@ -42,8 +42,7 @@ class TrackingModel(models.Model):
 
 class ConversationManager(models.Manager):
     def get_or_create_personal_conversation(self, first_user, second_user):
-        conversations = self.get_queryset().filter(type='personal')
-        conversations = conversations.filter(users__in=[first_user, second_user]).distinct()
+        conversations = self.get_queryset().filter(type='personal').filter(users__in=[first_user, second_user]).distinct()
         conversations = conversations.annotate(u_count=Count('users')).filter(u_count=2)
 
         if conversations.exists():

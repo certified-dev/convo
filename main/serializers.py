@@ -44,17 +44,21 @@ class MessageSerializer(serializers.ModelSerializer):
 class ConservationSerializer(serializers.ModelSerializer):
     other_user = serializers.SerializerMethodField('get_other_user')
     last_message = serializers.SerializerMethodField()
+    users_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Conversation
         fields = (
-            'id', 'name', 'type', 'other_user', 'last_message', 'created_at', 'updated_at', 'group_type', 'group_image')
+            'id', 'name', 'type', 'other_user', 'last_message', 'created_at', 'updated_at', 'group_type', 'group_image', 'users_count')
 
     def get_last_message(self, conversation):
         message = conversation.messages.last()
         if not message:
             return None
         return MessageSerializer(message).data
+
+    def get_users_count(self, conversation):
+        return conversation.users.count()
 
     def get_other_user(self, conversation):
         try:

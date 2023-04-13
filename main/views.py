@@ -81,9 +81,11 @@ class ConversationView(APIView):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     def post(self, request):
+        conversation = None
         try:
-            other_user = User.objects.filter(username=request.data['username'])
-            conversation = Conversation.objects.get_or_create_personal_conversation(request.user, other_user)
+            user = User.objects.filter(username=request.user).first()
+            other_user = User.objects.filter(username=request.data['username']).first()
+            conversation = Conversation.objects.get_or_create_personal_conversation(user, other_user)
         except KeyError:
             room_name = request.data['room_name']
             group_type = request.data['group_type']
