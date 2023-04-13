@@ -14,6 +14,7 @@ def user_directory_path(instance, filename):
 class User(AbstractUser):
     display_photo = models.ImageField(upload_to=user_directory_path, default='placeholder/image.jpeg')
     last_conversation = models.CharField(max_length=4, blank=True, null=True)
+
     # friends = models.ManyToManyField(settings.AUTH_USER_MODEL, blank=True)
 
     @receiver(post_save, sender=settings.AUTH_USER_MODEL)
@@ -23,6 +24,12 @@ class User(AbstractUser):
 
     def __str__(self):
         return self.username
+
+
+class Request(models.Model):
+    sender = models.ForeignKey(User, on_delete=models.CASCADE, related_name="request_sender")
+    recipient = models.ForeignKey(User, on_delete=models.CASCADE, related_name="request_recipient")
+    status = models.CharField(max_length=15, default="pending")
 
 
 class TrackingModel(models.Model):
@@ -48,14 +55,13 @@ class ConversationManager(models.Manager):
             conversation.name = f'{first_user}__{second_user}'
             return conversation
 
-    def get_or_create_group_conversation(self, user, name):
-        conversations = self.get_queryset().filter(type='group')
-        conversations = conversations.filter(users__in=[user])
+    def get_or_create_group_conversation(self, user, room_name, group_type):
+        conversations = self.get_queryset().filter(users__in=[user], type__in=["group"], name__in=[room_name])
 
         if conversations.exists():
             return conversations.first()
         else:
-            conversation = self.create(type='group', name=name)
+            conversation = self.create(type='group', name=room_name, group_type=group_type)
             conversation.users.add(user)
             return conversation
 
@@ -73,6 +79,8 @@ class Conversation(TrackingModel):
     type = models.CharField(max_length=15, choices=CONVERSATION_TYPE, default='group')
     users = models.ManyToManyField(User)
     online = models.ManyToManyField(User, related_name="online_users", blank=True)
+    group_type = models.CharField(max_length=10, null=True, blank=True)
+    group_image = models.ImageField(blank=True, null=True)
 
     objects = ConversationManager()
 
@@ -91,7 +99,7 @@ class Message(TrackingModel):
     recipient = models.ForeignKey(User, on_delete=models.CASCADE, related_name='received_messages', blank=True,
                                   null=True)
     content = models.CharField(max_length=1000)
-    state = models.CharField(max_length=10, default="sent")
+    status = models.CharField(max_length=10, default="sent")
     read = models.BooleanField(default=False)
 
     class Meta:
@@ -100,4 +108,4 @@ class Message(TrackingModel):
     def __str__(self) -> str:
         if self.recipient:
             return f'{self.sender} -> {self.recipient} : {self.content} @ {self.created_at}'
-        return f'{self.sender} : {self.content} @ {self.created_at}'
+        return f'{self.sender} -> {self.conversation.name} : {self.content} @ {self.created_at}'

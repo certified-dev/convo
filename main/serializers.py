@@ -38,7 +38,7 @@ class MessageSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Message
-        fields = ('id', 'sender', 'recipient', 'content', 'created_at', 'state', 'read')
+        fields = ('id', 'sender', 'recipient', 'content', 'created_at', 'status', 'read')
 
 
 class ConservationSerializer(serializers.ModelSerializer):
@@ -47,7 +47,8 @@ class ConservationSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Conversation
-        fields = ('id', 'name', 'type', 'other_user', 'last_message', 'created_at', 'updated_at')
+        fields = (
+            'id', 'name', 'type', 'other_user', 'last_message', 'created_at', 'updated_at', 'group_type', 'group_image')
 
     def get_last_message(self, conversation):
         message = conversation.messages.last()
@@ -56,12 +57,11 @@ class ConservationSerializer(serializers.ModelSerializer):
         return MessageSerializer(message).data
 
     def get_other_user(self, conversation):
-        data = self.context['request']
-        result = isinstance(data, type(User.objects.first()))
-
-        if result:
-            other_user = conversation.users.exclude(username=data.username)
-        else:
-            other_user = conversation.users.exclude(username=data.user.username)
-
-        return UserSerializer(other_user.first()).data
+        try:
+            request = self.context['request']
+            other_user = conversation.users.exclude(username=request.user.username)
+        except KeyError:
+            user = self.context['user']
+            other_user = conversation.users.exclude(username=user.username)
+        finally:
+            return UserSerializer(other_user.first()).data

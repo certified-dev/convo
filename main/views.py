@@ -21,7 +21,7 @@ class CustomObtainAuthTokenView(ObtainAuthToken):
         user = serializer.validated_data["user"]
         token, created = Token.objects.get_or_create(user=user)
         last = Conversation.objects.filter(id=user.last_conversation).first()
-        serializer = ConservationSerializer(last, context={'request': user})
+        serializer = ConservationSerializer(last, context={'user': user})
         return Response({
             "username": user.username,
             "token": token.key,
@@ -81,10 +81,16 @@ class ConversationView(APIView):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     def post(self, request):
-        other_user = User.objects.get(username=request.data['username'])
-        conversation = Conversation.objects.get_or_create_personal_conversation(request.user, other_user)
-        serializer = ConservationSerializer(conversation, context={'request': request})
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        try:
+            other_user = User.objects.filter(username=request.data['username'])
+            conversation = Conversation.objects.get_or_create_personal_conversation(request.user, other_user)
+        except KeyError:
+            room_name = request.data['room_name']
+            group_type = request.data['group_type']
+            conversation = Conversation.objects.get_or_create_group_conversation(request.user, room_name, group_type)
+        finally:
+            serializer = ConservationSerializer(conversation, context={'request': request})
+            return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 class MessagesView(APIView):
