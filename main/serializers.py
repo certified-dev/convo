@@ -27,9 +27,14 @@ class CreateUserSerializer(serializers.ModelSerializer):
 
 
 class UserSerializer(serializers.ModelSerializer):
+    friends_count = serializers.SerializerMethodField("get_friends_count")
+
     class Meta:
         model = User
-        fields = ('first_name', 'last_name', 'username', 'email', 'display_photo')
+        fields = ('first_name', 'last_name', 'username', 'email', 'display_photo', 'friends_count')
+
+    def get_friends_count(self, user):
+        return user.friends.count()
 
 
 class MessageSerializer(serializers.ModelSerializer):
@@ -49,7 +54,8 @@ class ConservationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Conversation
         fields = (
-            'id', 'name', 'type', 'other_user', 'last_message', 'created_at', 'updated_at', 'group_type', 'group_image', 'users_count')
+            'id', 'name', 'type', 'other_user', 'last_message', 'created_at', 'updated_at', 'group_type', 'group_image',
+            'users_count')
 
     def get_last_message(self, conversation):
         message = conversation.messages.last()
@@ -62,10 +68,10 @@ class ConservationSerializer(serializers.ModelSerializer):
 
     def get_other_user(self, conversation):
         try:
-            request = self.context['request']
-            other_user = conversation.users.exclude(username=request.user.username)
-        except KeyError:
             user = self.context['user']
             other_user = conversation.users.exclude(username=user.username)
+        except KeyError:
+            request = self.context['request']
+            other_user = conversation.users.exclude(username=request.user.username)
         finally:
             return UserSerializer(other_user.first()).data

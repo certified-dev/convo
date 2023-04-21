@@ -21,12 +21,14 @@ class CustomObtainAuthTokenView(ObtainAuthToken):
         user = serializer.validated_data["user"]
         token, created = Token.objects.get_or_create(user=user)
         last = Conversation.objects.filter(id=user.last_conversation).first()
-        serializer = ConservationSerializer(last, context={'user': user})
-        return Response({
-            "username": user.username,
+        serializer = ConservationSerializer(last, context={'user': user, 'request': request})
+        response_data = {
             "token": token.key,
             "last_conversation": serializer.data or None
-        })
+        }
+        serializer1 = UserSerializer(user)
+        response_data.update(serializer1.data)
+        return Response(response_data)
 
 
 class UserView(APIView):
@@ -68,6 +70,17 @@ class UsersView(APIView):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 
+class FriendsView(APIView):
+    """
+    get user friends list.
+    """
+
+    @permission_classes([IsAuthenticated, ])
+    def get(self, request):
+        serializer = UserSerializer(request.user.friends, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
 class ConversationView(APIView):
     permission_classes = [IsAuthenticated, ]
 
@@ -82,14 +95,25 @@ class ConversationView(APIView):
 
     def post(self, request):
         conversation = None
+        participants = None
+
         try:
+            other_user = request.data['username']
             user = User.objects.filter(username=request.user).first()
-            other_user = User.objects.filter(username=request.data['username']).first()
+            other_user = User.objects.filter(username=other_user).first()
             conversation = Conversation.objects.get_or_create_personal_conversation(user, other_user)
         except KeyError:
+            print(request.data)
             room_name = request.data['room_name']
             group_type = request.data['group_type']
-            conversation = Conversation.objects.get_or_create_group_conversation(request.user, room_name, group_type)
+            image = request.data['group_image']
+            desc = request.data['desc']
+
+            if group_type == "private":
+                participants = request.data['participants']
+
+            conversation = Conversation.objects.get_or_create_group_conversation(request.user, room_name, group_type,
+                                                                                 desc, image, participants)
         finally:
             serializer = ConservationSerializer(conversation, context={'request': request})
             return Response(serializer.data, status=status.HTTP_200_OK)
@@ -132,6 +156,9 @@ class UserLogoutView(APIView):
     permission_classes = [IsAuthenticated, ]
 
     def post(self, request):
-        request.user.last_conversation = request.data['id']
-        request.user.save()
-        return Response(status=status.HTTP_200_OK)
+        try:
+            request.user.last_conversation = request.data['id']
+            request.user.save()
+            return Response(status=status.HTTP_200_OK)
+        except KeyError:
+            pass

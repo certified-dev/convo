@@ -14,8 +14,7 @@ def user_directory_path(instance, filename):
 class User(AbstractUser):
     display_photo = models.ImageField(upload_to=user_directory_path, default='placeholder/image.jpeg')
     last_conversation = models.CharField(max_length=4, blank=True, null=True)
-
-    # friends = models.ManyToManyField(settings.AUTH_USER_MODEL, blank=True)
+    friends = models.ManyToManyField(settings.AUTH_USER_MODEL, blank=True)
 
     @receiver(post_save, sender=settings.AUTH_USER_MODEL)
     def create_auth_token(sender, instance=None, created=False, **kwargs):
@@ -54,14 +53,22 @@ class ConversationManager(models.Manager):
             conversation.name = f'{first_user}__{second_user}'
             return conversation
 
-    def get_or_create_group_conversation(self, user, room_name, group_type):
+    def get_or_create_group_conversation(self, user, room_name, group_type, desc, image, participants):
+
+        print(user, room_name)
         conversations = self.get_queryset().filter(users__in=[user], type__in=["group"], name__in=[room_name])
 
         if conversations.exists():
             return conversations.first()
         else:
-            conversation = self.create(type='group', name=room_name, group_type=group_type)
+            users = participants.split(",")
+            results = User.objects.filter(username__in=users)
+            conversation = self.create(type='group', name=room_name, group_type=group_type, group_description=desc, group_image=image)
             conversation.users.add(user)
+
+            for i in results:
+                conversation.users.add(i)
+
             return conversation
 
     def by_user(self, user):
@@ -80,6 +87,7 @@ class Conversation(TrackingModel):
     online = models.ManyToManyField(User, related_name="online_users", blank=True)
     group_type = models.CharField(max_length=10, null=True, blank=True)
     group_image = models.ImageField(blank=True, null=True)
+    group_description = models.CharField(max_length=500, null=True, blank=True)
 
     objects = ConversationManager()
 
@@ -100,6 +108,7 @@ class Message(TrackingModel):
     content = models.CharField(max_length=1000)
     status = models.CharField(max_length=10, default="sent")
     read = models.BooleanField(default=False)
+    seen = models.ManyToManyField(User, blank=True)
 
     class Meta:
         ordering = ['created_at']

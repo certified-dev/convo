@@ -241,7 +241,7 @@ class RoomChatConsumer(JsonWebsocketConsumer):
         self.accept()
 
         self.room_name = self.scope['url_route']['kwargs']['room_name']
-        self.conversation = Conversation.objects.get_or_create_group_conversation(self.user, self.room_name, "personal")
+        self.conversation = Conversation.objects.get_or_create_group_conversation(self.user, self.room_name, "", "", None, None)
         self.conversation_name = self.conversation.name
         self.user_conversations = Conversation.objects.filter(users__in=[self.user]).order_by("-created_at")
 
@@ -315,8 +315,6 @@ class RoomChatConsumer(JsonWebsocketConsumer):
                         "id": self.conversation.id
                     },
                 )
-
-
 
         if message_type == "typing":
             async_to_sync(self.channel_layer.group_send)(
